@@ -1,0 +1,8 @@
+#info file contains name and author of books in a list 
+info.py
+
+# pycache folder
+__pycache__
+
+# virtual environment
+apiEnv
