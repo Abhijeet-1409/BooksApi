@@ -14,11 +14,6 @@ class Book(BaseModel) :
     class Config :
         extra = "forbid"
 
-class RequestModel(BaseModel) :
-    class Config :
-        extra = "allow"
-
-
 
 def generateBookId() :
     return str(uuid.uuid4())
@@ -40,20 +35,6 @@ async def getAllBooks() :
         raise HTTPException(detail="Internal Error",status_code=500)    
 
 
-@app.get("/books/{bookId}")
-async def getBook(bookId : str) :
-    try :
-       if bookId not in book_Dict :
-           raise HTTPException(detail=f"Book with id {bookId} did not found",status_code=404)
-       content = book_Dict[bookId].model_dump()
-       return JSONResponse(content=content,status_code=200)
-    except HTTPException as http_exc:
-        raise http_exc     
-    except Exception as error: 
-        print(error)
-        raise HTTPException(detail="Internal Error",status_code=500)
-
-
 @app.post("/books")
 async def createBook(book:Book) :
     try :
@@ -73,29 +54,33 @@ async def createBook(book:Book) :
     except Exception as error:
         print(error)
         raise HTTPException(detail="Internal Error", status_code=500)
+    
+
+@app.get("/books/{bookId}")
+async def getBook(bookId : str) :
+    try :
+       if bookId not in book_Dict :
+           raise HTTPException(detail=f"Book with id {bookId} did not found",status_code=404)
+       content = book_Dict[bookId].model_dump()
+       return JSONResponse(content=content,status_code=200)
+    except HTTPException as http_exc:
+        raise http_exc     
+    except Exception as error: 
+        print(error)
+        raise HTTPException(detail="Internal Error",status_code=500)
+
 
 
 @app.put("/books/{bookId}") 
-async def updateBook(bookId : str,updatedBook : RequestModel) :
+async def updateBook(bookId : str,updatedBook : Book) :
     try :
-        invalid_fields = []
         requestBody = updatedBook.model_dump()
         if bookId not in book_Dict :
             raise HTTPException(detail=f"book with {bookId} did not exist",status_code=404)
-        if "additionalProp1" in requestBody or len(requestBody.keys()) == 0 :
-            raise HTTPException(detail=f"please enter fields",status_code=400)
         book = book_Dict[bookId]
-        for key in requestBody.keys() :
-            if not hasattr(book,key) :
-               invalid_fields.append(f"{key} is not a valid field")
-        if invalid_fields :
-            detail = {
-                "invalid fields" : invalid_fields,
-            }
-            raise HTTPException(detail=detail,status_code=400)
-
         for key,value in requestBody.items() :
-            if hasattr(book,key) and value is str and value:
+            if hasattr(book,key) and isinstance(value, str) and value:
+                print(key,value)
                 setattr(book,key,value)
         content = {
             "message":f"book with id {bookId} has been updated",
