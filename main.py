@@ -1,34 +1,57 @@
-from fastapi import FastAPI , HTTPException, Request
+from typing import Dict, Optional
+from fastapi import Body, FastAPI , HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Dict
-from info import names,authors
-import uuid
+from model import Book
+from info import books
+from enum import Enum
 
 app = FastAPI()
 
-class Book(BaseModel) :
-    name : str
-    author : str
+original_openapi = app.openapi
 
-    class Config :
-        extra = "forbid"
+def  custom_openApi() :
+    
+    if app.openapi_schema :
+        return app.openapi_schema
+    
+    modified_openapi_schema = original_openapi()
+
+    if "components" in modified_openapi_schema :
+        components = modified_openapi_schema["components"]
+        if "schemas" in components :
+            schemas = components["schemas"]
+            if "Book" in schemas :
+                book_schema = schemas["Book"] 
+                if "properties" in book_schema :
+                    book_schema["properties"].pop("id",None)
+
+    if "paths" in modified_openapi_schema :
+        paths = modified_openapi_schema["paths"]
+        if "/books/{bookId}" in paths : 
+            put_method = paths["/books/{bookId}"].get("put")
+            if put_method and "requestBody" in put_method :
+                request_body = put_method["requestBody"]
+                if "content" in request_body :
+                    content = request_body["content"]
+                    if "application/json" in content:
+                        schema = content["application/json"]["schema"]
+                        if "type" in schema and schema["type"] == "object":
+                            schema.pop("additionalProperties", None)
+                            schema["additionalProperties"] = False
+
+    app.openapi_schema = modified_openapi_schema
+    return modified_openapi_schema
 
 
-def generateBookId() :
-    return str(uuid.uuid4())
+app.openapi = custom_openApi
 
 
-book_Dict : Dict[str,Book] = {
-    f"book-{generateBookId()}": Book(name=names[i], author=authors[i])
-    for i in range(len(names))
-}
 
 
 @app.get("/books")
 async def getAllBooks() :
     try :
-        content = {"books":{key:value.model_dump() for key,value in book_Dict.items()}}
+        content = {"books":[ book.model_dump() for book in books]}
         return JSONResponse(content=content,status_code=200)
     except Exception as error: 
         print(error)
@@ -38,16 +61,8 @@ async def getAllBooks() :
 @app.post("/books")
 async def createBook(book:Book) :
     try :
-        errors = []
-        for key,value in book.model_dump().items() :
-            if isinstance(value,str) and not value :
-                errors.append(f"{key} value cannot be empty it is required")
-        if len(errors):
-            error_message = "; ".join(errors)
-            raise HTTPException(detail=error_message, status_code=422)
-        bookId = f"book-{generateBookId()}"
-        book_Dict[bookId] = book
-        content = {"message":f"book {book.name} is added with id {bookId}"}
+        content = {"message":f"book {book.name} is added with id {book.id}"}
+        books.append(book)
         return JSONResponse(content=content,status_code=201) 
     except HTTPException as http_exc:
         raise http_exc     
@@ -59,9 +74,10 @@ async def createBook(book:Book) :
 @app.get("/books/{bookId}")
 async def getBook(bookId : str) :
     try :
-       if bookId not in book_Dict :
+       book = next(filter(lambda b: b.id == bookId, books), None)
+       if book is None  :
            raise HTTPException(detail=f"Book with id {bookId} did not found",status_code=404)
-       content = book_Dict[bookId].model_dump()
+       content = book.model_dump_detail()
        return JSONResponse(content=content,status_code=200)
     except HTTPException as http_exc:
         raise http_exc     
@@ -72,35 +88,40 @@ async def getBook(bookId : str) :
 
 
 @app.put("/books/{bookId}") 
-async def updateBook(bookId : str,updatedBook : Book) :
-    try :
-        requestBody = updatedBook.model_dump()
-        if bookId not in book_Dict :
-            raise HTTPException(detail=f"book with {bookId} did not exist",status_code=404)
-        book = book_Dict[bookId]
-        for key,value in requestBody.items() :
-            if hasattr(book,key) and isinstance(value, str) and value:
-                print(key,value)
-                setattr(book,key,value)
+async def updateBook(bookId: str, request_body: Dict[str, Optional[str]] = Body(...)):
+    try:
+        book = next((b for b in books if b.id == bookId), None)
+        if book is None:
+            raise HTTPException(detail=f"Book with id {bookId} does not exist", status_code=404)
+        
+        updateBook = request_body
+        # temp_book = Book(**{**book.model_dump(), **updatedBook.model_dump()})
+
+        # for key, value in updatedBook.model_dump().items():
+        #     if value is not None:  
+        #         setattr(book, key, value)
+
         content = {
-            "message":f"book with id {bookId} has been updated",
+            "message": f"Book with id {bookId} has been updated",
             "book": book.model_dump()
         }
-        return JSONResponse(content=content,status_code=200)
+        return JSONResponse(content=content, status_code=200)
+
     except HTTPException as http_exc:
-        raise http_exc     
+        raise http_exc
     except Exception as error:
         print(error)
         raise HTTPException(detail="Internal Error", status_code=500)
 
 
-
 @app.delete("/books/{bookId}")
 async def deleteBook(bookId : str) :
     try :
-        if bookId not in book_Dict :
-            raise HTTPException(detail=f"book with id {bookId} did not found")
-        del book_Dict[bookId]
+        condition = lambda b : b.id == bookId
+        book_index = next((i for i,value in enumerate(books) if condition(value)),None)
+        if book_index is None:
+            raise HTTPException(detail=f"book with id {bookId} did not found",status_code=404)
+        del books[book_index]
         content = {
             "message" : f"book with id{bookId} has been deleted"
         }
