@@ -62,7 +62,7 @@ async def getAllBooks() :
 @app.post("/books")
 async def createBook(book:Book) :
     try :
-        content = {"message":f"book {book.name} is added with id {book.id}"}
+        content = {"message":f"book {book.book_title} is added with id {book.id}"}
         books.append(book)
         return JSONResponse(content=content,status_code=201) 
     except HTTPException as http_exc:
