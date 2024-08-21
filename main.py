@@ -105,7 +105,8 @@ async def updateBook(bookId: str, request_body: Dict[str, Optional[str]] = Body(
         try:
             temp_book = Book(**book_data)
         except ValidationError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            response_body = {"detail":e.errors()}
+            raise HTTPException(status_code=422, detail=response_body)
 
         for key, value in request_body.items():
             if value not in (None, ""): 
