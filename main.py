@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 from fastapi import Body, FastAPI , HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from model import Book
 from info import books
 from enum import Enum
@@ -94,12 +95,21 @@ async def updateBook(bookId: str, request_body: Dict[str, Optional[str]] = Body(
         if book is None:
             raise HTTPException(detail=f"Book with id {bookId} does not exist", status_code=404)
         
-        updateBook = request_body
-        # temp_book = Book(**{**book.model_dump(), **updatedBook.model_dump()})
+        book_data = book.model_dump_detail()
+        
+        del book_data["id"]
+        
+        for key, value in request_body.items():
+            book_data[key] = value
+      
+        try:
+            temp_book = Book(**book_data)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
-        # for key, value in updatedBook.model_dump().items():
-        #     if value is not None:  
-        #         setattr(book, key, value)
+        for key, value in request_body.items():
+            if value not in (None, ""): 
+                setattr(book, key, value)
 
         content = {
             "message": f"Book with id {bookId} has been updated",
